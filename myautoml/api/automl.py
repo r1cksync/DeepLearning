@@ -71,12 +71,11 @@ class AutoML:
             ]
             metric = Evaluator.rmse
 
-        # Model selection
+        # Model selection (single loop, always use y_enc for classification)
         best_score = -np.inf if self.task == 'classification' else float('inf')
         self.best_model = None
         for model in models:
             try:
-                # Always fit and score with integer-encoded labels for classification
                 if self.task == 'classification':
                     model.fit(X_processed, y_enc)
                     preds = model.predict(X_processed)
@@ -87,29 +86,6 @@ class AutoML:
                 else:
                     model.fit(X_processed, y)
                     preds = model.predict(X_processed)
-                    score = metric(y, preds)
-                    if score < best_score:
-                        best_score = score
-                        self.best_model = model
-            except Exception as e:
-                print(f"Model {type(model).__name__} failed: {e}")
-        if self.best_model is None:
-            raise RuntimeError("No model could be successfully trained. Check model wrappers and data.")
-        self.ensemble_models = [self.best_model]
-
-        # Model selection
-        best_score = -np.inf if self.task == 'classification' else float('inf')
-        self.best_model = None
-        for model in models:
-            try:
-                model.fit(X_processed, y)
-                preds = model.predict(X_processed)
-                if self.task == 'classification':
-                    score = metric(y, preds)
-                    if score > best_score:
-                        best_score = score
-                        self.best_model = model
-                else:
                     score = metric(y, preds)
                     if score < best_score:
                         best_score = score
@@ -132,8 +108,11 @@ class AutoML:
             # If model outputs probabilities, convert to class labels
             if isinstance(preds, np.ndarray) and preds.ndim > 1 and preds.shape[1] > 1:
                 preds = np.argmax(preds, axis=1)
-            # Decode integer predictions back to string labels if label_encoder exists
-            if hasattr(self, 'label_encoder') and self.label_encoder is not None:
+            # Decode integer predictions back to string labels if label_encoder exists and preds are integer-encoded
+            if (
+                hasattr(self, 'label_encoder') and self.label_encoder is not None
+                and (np.issubdtype(preds.dtype, np.integer) or np.issubdtype(preds.dtype, np.floating))
+            ):
                 preds = self.label_encoder.inverse_transform(preds.astype(int))
-        return preds
+        return np.asarray(preds).ravel()
 
