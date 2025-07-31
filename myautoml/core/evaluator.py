@@ -16,3 +16,8 @@ class Evaluator:
 
     def accuracy_score(self, y_true, y_pred):
         return sum(y_true == y_pred) / len(y_true) if len(y_true) > 0 else 0.0
+
+    @staticmethod
+    def rmse(y_true, y_pred):
+        import numpy as np
+        return np.sqrt(np.mean((np.array(y_true) - np.array(y_pred)) ** 2))

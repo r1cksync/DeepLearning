@@ -6,25 +6,28 @@ MODEL_PATH = "models/"
 REPORT_PATH = "reports/"
 
 # Model parameters
+
 XGBOOST_PARAMS = {
     'learning_rate': 0.1,
     'max_depth': 6,
     'n_estimators': 100,
-    'objective': 'binary:logistic'
+    'objective': 'reg:squarederror'
 }
+
 
 LGBM_PARAMS = {
     'learning_rate': 0.1,
     'num_leaves': 31,
     'n_estimators': 100,
-    'objective': 'binary'
+    'objective': 'regression'
 }
+
 
 CATBOOST_PARAMS = {
     'iterations': 1000,
     'learning_rate': 0.1,
     'depth': 6,
-    'loss_function': 'Logloss'
+    'loss_function': 'RMSE'
 }
 
 # Evaluation metrics

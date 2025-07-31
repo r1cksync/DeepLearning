@@ -1,8 +1,7 @@
-
 import os
 import numpy as np
 import pandas as pd
-from myautoml.core.feature_engineering import handle_missing_values, encode_categorical_features, scale_features
+from myautoml.core.feature_engineering import FeatureEngineer, handle_missing_values, encode_categorical_features, scale_features
 from myautoml.core.model_selector import ModelSelector
 from myautoml.core.hyperparameter_optimization import HyperparameterOptimizer
 from myautoml.core.ensembling import blend_models
@@ -21,84 +20,68 @@ class AutoML:
         self.ensemble_weights = {}
         self.logger = setup_logger('AutoML', os.path.join(config.MODEL_PATH, 'automl.log'))
 
-    def fit(self, X, y):
-        # 1. Feature Engineering
-        log_message(self.logger, 'Starting feature engineering...')
-        X = handle_missing_values(X)
-        X = encode_categorical_features(X)
-        X = scale_features(X)
-
-        # 2. Model Wrappers
-        log_message(self.logger, 'Initializing model wrappers...')
-        model_wrappers = [
+        self.feature_engineer = FeatureEngineer()
+        self.models = [
             XGBoostModel(params=config.XGBOOST_PARAMS),
             LGBMModel(params=config.LGBM_PARAMS),
             CatBoostModel(params=config.CATBOOST_PARAMS)
         ]
-
-        # 3. Hyperparameter Optimization
-        log_message(self.logger, 'Starting hyperparameter optimization...')
-        optimized_models = []
-        for wrapper in model_wrappers:
-            optimizer = HyperparameterOptimizer(wrapper.model, wrapper.model.get_params(), scoring='neg_root_mean_squared_error', n_iter=5, random_state=42)
-            best_params, _ = optimizer.optimize(X, y)
-            wrapper.model.set_params(**best_params)
-            optimized_models.append(wrapper)
-
-        # 4. Model Selection
-        log_message(self.logger, 'Selecting best model(s)...')
-        selector = ModelSelector([w.model for w in optimized_models], metrics=Evaluator)
-        # For simplicity, use train/val split here
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-        best_model = selector.select_model(X_train, y_train, X_val, y_val)
-        self.models = {'best': best_model}
-
-        # 5. Ensembling (blending)
-        log_message(self.logger, 'Blending models...')
-        self.ensemble_models = [w.model for w in optimized_models]
-        # Optionally, you can use stacking from ensembling.py as well
-
-        # 6. Evaluation
-        log_message(self.logger, 'Evaluating ensemble...')
-        blended_pred = blend_models(self.ensemble_models, X_val, y_val)
-        self.results = {
-            'accuracy': accuracy_score(y_val, blended_pred),
-            'f1_score': f1_score(y_val, blended_pred)
+        self.best_model = None
+        self.ensemble_models = []
+        self.selected_features = None
+        # Define hyperparameter grids for each model
+        param_grids = {
+            'XGBoostModel': {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [3, 5, 7],
+                'learning_rate': [0.01, 0.1, 0.2],
+                'objective': ['reg:squarederror']
+            },
+            'LGBMModel': {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [-1, 5, 10],
+                'learning_rate': [0.01, 0.1, 0.2]
+            },
+            'CatBoostModel': {
+                'iterations': [100, 200, 500],
+                'depth': [4, 6, 8],
+                'learning_rate': [0.01, 0.1, 0.2]
+            }
         }
 
+        model_wrappers = [
+            (XGBoostModel(params=config.XGBOOST_PARAMS), param_grids['XGBoostModel']),
+            (LGBMModel(params=config.LGBM_PARAMS), param_grids['LGBMModel']),
+            (CatBoostModel(params=config.CATBOOST_PARAMS), param_grids['CatBoostModel'])
+        ]
+
+    def fit(self, X, y):
+        # Fit feature engineering pipeline on train, transform train
+        X_processed = self.feature_engineer.fit_transform(X, y)
+        self.selected_features = X_processed.columns.tolist()
+
+        # Model selection (simple RMSE-based selection)
+        best_score = float('inf')
+        for model in self.models:
+            model.fit(X_processed, y)
+            preds = model.predict(X_processed)
+            score = Evaluator.rmse(y, preds)
+            if score < best_score:
+                best_score = score
+                self.best_model = model
+
+        # Optionally, fit ensemble on train
+        self.ensemble_models = [self.best_model]
+
     def predict(self, X):
-        # Apply same feature engineering as in fit
-        X = handle_missing_values(X)
-        X = encode_categorical_features(X)
-        X = scale_features(X)
-        # Use blended ensemble for prediction
-        return blend_models(self.ensemble_models, X, None)
-
-    def run_automl(self, data):
-        # Logic to run the AutoML process on the provided data
-        pass
-
-    def get_results(self):
-        # Logic to return the results of the AutoML process
-        return self.results
-
-    def predict(self, X):
-        import numpy as np
-        if not self.models:
-            raise Exception("No models trained. Call fit() first.")
-        preds = []
-        for name, model in self.models.items():
-            preds.append(model.predict(X))
-        preds = np.array(preds)
-        # Weighted average
-        weights = np.array([self.ensemble_weights[name] for name in self.models])
-        return np.average(preds, axis=0, weights=weights)
-
-    def run_automl(self, data):
-        # Logic to run the AutoML process on the provided data
-        pass
-
-    def get_results(self):
-        # Logic to return the results of the AutoML process
-        return self.results
+        # Transform test using fitted feature engineering pipeline
+        X_processed = self.feature_engineer.transform(X)
+        # Add missing columns (from train) as zeros, drop extra columns
+        for col in self.selected_features:
+            if col not in X_processed:
+                X_processed[col] = 0
+        X_processed = X_processed[self.selected_features]
+        # Ensure all columns are numeric
+        X_processed = X_processed.apply(pd.to_numeric, errors='coerce').fillna(0)
+        preds = self.best_model.predict(X_processed)
+        return preds

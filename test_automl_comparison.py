@@ -1,58 +1,33 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+import numpy as np
 from flaml import AutoML as FLAMLAutoML
-import joblib
 import os
 import sys
-
-# Import your custom AutoML library
 sys.path.append(os.path.abspath('myautoml'))
-from api.automl import AutoML as MyAutoML
+from myautoml.api.automl import AutoML as MyAutoML
 
-# Load dataset
-DATA_PATH = '../Housing.csv' if not os.path.exists('Housing.csv') else 'Housing.csv'
-df = pd.read_csv(DATA_PATH)
+# Load train and test data
+train_df = pd.read_csv('train.csv')
+test_df = pd.read_csv('test.csv')
 
-# Assume the last column is the target
+# Prepare features and target
+X_train = train_df.drop(['id', 'price'], axis=1)
+y_train = train_df['price']
+X_test = test_df.drop(['id'], axis=1)
+test_ids = test_df['id']
 
-# Encode categorical features
-
-from pandas.api.types import is_object_dtype
-X_raw = df.iloc[:, :-1]
-y_raw = df.iloc[:, -1]
-cat_cols = [col for col in X_raw.columns if is_object_dtype(X_raw[col])]
-if cat_cols:
-    X = pd.get_dummies(X_raw, columns=cat_cols)
-else:
-    X = X_raw
-
-# Encode target if categorical
-if is_object_dtype(y_raw):
-    from sklearn.preprocessing import LabelEncoder
-    le = LabelEncoder()
-    y = le.fit_transform(y_raw)
-else:
-    y = y_raw
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-results = {}
-
-import numpy as np
-
-# 1. Test your custom AutoML
+# --- MyAutoML ---
 my_automl = MyAutoML()
 my_automl.fit(X_train, y_train)
-y_pred_my = my_automl.predict(X_test)
-results['MyAutoML'] = np.sqrt(mean_squared_error(y_test, y_pred_my))
+my_preds = my_automl.predict(X_test)
+my_submission = pd.DataFrame({'id': test_ids, 'price': my_preds})
+my_submission.to_csv('myautoml_submission.csv', index=False)
+print('MyAutoML predictions saved to myautoml_submission.csv')
 
-# 2. Test FLAML
+# --- FLAML ---
 flaml_automl = FLAMLAutoML(task='regression', time_budget=60)
-flaml_automl.fit(X_train=X_train, y_train=y_train, X_val=X_test, y_val=y_test)
-y_pred_flaml = flaml_automl.predict(X_test)
-results['FLAML'] = np.sqrt(mean_squared_error(y_test, y_pred_flaml))
-
-print('RMSE Results:')
-for k, v in results.items():
-    print(f'{k}: {v}')
+flaml_automl.fit(X_train=X_train, y_train=y_train)
+flaml_preds = flaml_automl.predict(X_test)
+flaml_submission = pd.DataFrame({'id': test_ids, 'price': flaml_preds})
+flaml_submission.to_csv('flaml_submission.csv', index=False)
+print('FLAML predictions saved to flaml_submission.csv')
