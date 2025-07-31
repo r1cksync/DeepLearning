@@ -1,3 +1,16 @@
+from catboost import CatBoostClassifier, CatBoostRegressor
+
+class CatBoostClassifierModel:
+    def __init__(self, params=None):
+        self.params = params if params is not None else {}
+        self.model = CatBoostClassifier(**self.params)
+
+    def fit(self, X, y):
+        self.model.fit(X, y, verbose=0)
+
+    def predict(self, X):
+        return self.model.predict(X)
+
 class CatBoostModel:
     def __init__(self, params=None):
         from catboost import CatBoostRegressor

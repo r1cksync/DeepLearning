@@ -1,3 +1,14 @@
+from lightgbm import LGBMClassifier
+
+class LGBMClassifierModel:
+    def __init__(self, params=None):
+        self.params = params if params is not None else {}
+        self.model = LGBMClassifier(**self.params)
+    def fit(self, X, y):
+        self.model.fit(X, y)
+    def predict(self, X):
+        return self.model.predict(X)
+
 class LGBMModel:
     def __init__(self, params=None):
         import lightgbm as lgb

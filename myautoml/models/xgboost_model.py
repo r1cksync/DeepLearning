@@ -1,3 +1,14 @@
+from xgboost import XGBClassifier
+
+class XGBoostClassifierModel:
+    def __init__(self, params=None):
+        self.params = params if params is not None else {}
+        self.model = XGBClassifier(**self.params)
+    def fit(self, X, y):
+        self.model.fit(X, y)
+    def predict(self, X):
+        return self.model.predict(X)
+
 class XGBoostModel:
     def __init__(self, params=None):
         import xgboost as xgb
